@@ -17,14 +17,14 @@ use Koha::Email;
 use Koha::SMTP::Servers;
 use Koha::DateUtils qw(dt_from_string output_pref);
 
-our $VERSION = '1.1.0';
+our $VERSION = '1.2.0';
 
 our $metadata = {
     name            => 'SciBack Instant Notify',
     author          => 'SciBack <soporte@sciback.pe>',
     description     => 'Notificaciones instantáneas de circulación vía email y SMS (checkout, devolución, renovación). Producto SciBack.',
     date_authored   => '2026-04-14',
-    date_updated    => '2026-04-14',
+    date_updated    => '2026-04-15',
     minimum_version => '22.11',
     maximum_version => undef,
     version         => $VERSION,
@@ -191,10 +191,6 @@ sub _send_sms {
     my $sms_number = $patron->smsalertnumber;
     return unless $sms_number;
 
-    my $hub_url = $self->retrieve_data('sms_hub_url')    // '';
-    my $hub_key = $self->retrieve_data('sms_hub_apikey') // '';
-    return unless $hub_url && $hub_key;
-
     # Construir mensaje desde template
     my $tpl = $self->retrieve_data("sms_$action")
         // $self->_default_sms($action);
@@ -216,29 +212,10 @@ sub _send_sms {
     my $error_msg = '';
 
     try {
-        require HTTP::Tiny;
-        require JSON;
-
-        my $http = HTTP::Tiny->new(
-            timeout => $self->retrieve_data('smtp_timeout') // 8,
-        );
-
-        my $resp = $http->request(
-            'POST',
-            "$hub_url/api/v1/sms/send",
-            {
-                headers => {
-                    'Content-Type' => 'application/json',
-                    'X-API-Key'    => $hub_key,
-                },
-                content => JSON::encode_json({ to => $sms_number, message => $message }),
-            }
-        );
-
-        if ( $resp->{success} ) {
-            $sent = 1;
-        } else {
-            $error_msg = "HTTP $resp->{status}: " . ( $resp->{content} // '' );
+        require C4::SMS;
+        $sent = C4::SMS->send_sms({ message => $message, destination => $sms_number }) ? 1 : 0;
+        unless ($sent) {
+            $error_msg = "C4::SMS->send_sms returned false";
             warn "[SciBack::InstantNotify] Error SMS para $sms_number ($action): $error_msg";
         }
     }
@@ -370,8 +347,6 @@ sub configure {
             enable_sms_checkout  => scalar( $cgi->param('enable_sms_checkout') )  ? 1 : 0,
             enable_sms_checkin   => scalar( $cgi->param('enable_sms_checkin') )   ? 1 : 0,
             enable_sms_renewal   => scalar( $cgi->param('enable_sms_renewal') )   ? 1 : 0,
-            sms_hub_url          => scalar( $cgi->param('sms_hub_url') )          // '',
-            sms_hub_apikey       => scalar( $cgi->param('sms_hub_apikey') )       // '',
             sms_checkout         => scalar( $cgi->param('sms_checkout') )         // '',
             sms_checkin          => scalar( $cgi->param('sms_checkin') )          // '',
             sms_renewal          => scalar( $cgi->param('sms_renewal') )          // '',
@@ -417,8 +392,6 @@ sub configure {
         enable_sms_checkout  => $self->retrieve_data('enable_sms_checkout') // 1,
         enable_sms_checkin   => $self->retrieve_data('enable_sms_checkin')  // 1,
         enable_sms_renewal   => $self->retrieve_data('enable_sms_renewal')  // 1,
-        sms_hub_url          => $self->retrieve_data('sms_hub_url')         // '',
-        sms_hub_apikey       => $self->retrieve_data('sms_hub_apikey')      // '',
         sms_checkout         => $self->retrieve_data('sms_checkout')
             // $self->_default_sms('checkout'),
         sms_checkin          => $self->retrieve_data('sms_checkin')
@@ -500,6 +473,9 @@ sub upgrade {
         unless defined $self->retrieve_data('enable_sms_checkin');
     $self->store_data({ enable_sms_renewal  => 1 })
         unless defined $self->retrieve_data('enable_sms_renewal');
+
+    # 1.1.0 → 1.2.0: SMS usa C4::SMS (SMSSendDriver de Koha sysprefs)
+    # sms_hub_url y sms_hub_apikey ya no se usan — se pueden dejar en plugin_data sin efecto
 
     return 1;
 }

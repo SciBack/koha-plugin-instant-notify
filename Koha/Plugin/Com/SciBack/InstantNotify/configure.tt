@@ -117,24 +117,9 @@
           <div class="sn-section sn-section-sms">
             <h3>📱 Configuración de SMS</h3>
             <p class="text-muted" style="font-size:.9em">
-              Envía SMS instantáneo vía <strong>sms-hub</strong> cuando el patron tiene <code>smsalertnumber</code> registrado.
+              Envía SMS instantáneo cuando el patron tiene <code>smsalertnumber</code> registrado.
+              Usa el driver configurado en <a href="/cgi-bin/koha/admin/preferences.pl?op=search&searchfield=SMSSendDriver" target="_blank">Koha → Admin → Preferencias del sistema → SMSSendDriver</a>.
             </p>
-            <div class="row mb-3">
-              <div class="col-sm-6">
-                <div class="form-group">
-                  <label for="sms_hub_url">URL del sms-hub</label>
-                  <input type="text" class="form-control" id="sms_hub_url" name="sms_hub_url"
-                    value="[% sms_hub_url | html %]" placeholder="http://192.168.15.231:8000">
-                </div>
-              </div>
-              <div class="col-sm-6">
-                <div class="form-group">
-                  <label for="sms_hub_apikey">API Key (cliente Koha)</label>
-                  <input type="text" class="form-control" id="sms_hub_apikey" name="sms_hub_apikey"
-                    value="[% sms_hub_apikey | html %]" placeholder="97bffb40...">
-                </div>
-              </div>
-            </div>
             <div class="mb-3">
               <label class="font-weight-bold">Acciones SMS habilitadas</label><br>
               <div class="form-check form-check-inline">
