@@ -173,6 +173,7 @@
               <code>&lt;&lt;branches.branchname&gt;&gt;</code>
               <code>&lt;&lt;library_name&gt;&gt;</code>
               <code>&lt;&lt;opac_url&gt;&gt;</code>
+              <code>&lt;&lt;retraso_email&gt;&gt;</code> (solo devolución: bloque "DEVUELTO CON RETRASO: N dias", vacío si a tiempo)
             </p>
 
             <ul class="nav nav-tabs" role="tablist">

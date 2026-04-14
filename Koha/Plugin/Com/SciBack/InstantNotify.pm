@@ -188,7 +188,11 @@ sub _send_sms {
     my $patron  = $data->{patron};
     my $item    = $data->{item};
 
-    return unless $self->retrieve_data("enable_sms_$action") // 1;
+    my $_log = sub { open(my $f,'>>','/tmp/sms_debug.log'); print $f "[SMS] @_\n"; close $f; };
+
+    my $enabled = $self->retrieve_data("enable_sms_$action") // 1;
+    $_log->("action=$action enabled=$enabled num=" . ($patron->smsalertnumber // 'none'));
+    return unless $enabled;
 
     my $sms_number = $patron->smsalertnumber;
     return unless $sms_number;
@@ -199,6 +203,10 @@ sub _send_sms {
     utf8::decode($tpl) unless utf8::is_utf8($tpl);  # BD → Unicode
 
     my %vars = $self->_build_vars($data);
+    # Truncar título a 40 chars para que no consuma todo el SMS
+    if ( defined $vars{'<<biblio.title>>'} && length($vars{'<<biblio.title>>'}) > 40 ) {
+        $vars{'<<biblio.title>>'} = substr($vars{'<<biblio.title>>'}, 0, 37) . '...';
+    }
     my $message = $tpl;
     for my $var ( keys %vars ) {
         my $val = $vars{$var} // '';
@@ -211,12 +219,16 @@ sub _send_sms {
     # Truncar a 160 caracteres
     $message = substr($message, 0, 160) if length($message) > 160;
 
+    $_log->("msg=$message");
+
     my $sent = 0;
     my $error_msg = '';
 
     try {
         require C4::SMS;
-        $sent = C4::SMS->send_sms({ message => $message, destination => $sms_number }) ? 1 : 0;
+        my $result = C4::SMS->send_sms({ message => $message, destination => $sms_number });
+        $_log->("raw_result=" . ($result // 'undef'));
+        $sent = $result ? 1 : 0;
         unless ($sent) {
             $error_msg = "C4::SMS->send_sms returned false";
             warn "[SciBack::InstantNotify] Error SMS para $sms_number ($action): $error_msg";
@@ -224,8 +236,11 @@ sub _send_sms {
     }
     catch {
         $error_msg = "$_";
+        $_log->("exception=$error_msg");
         warn "[SciBack::InstantNotify] Excepción SMS para $sms_number ($action): $error_msg";
     };
+
+    $_log->("sent=$sent error=$error_msg");
 
     $self->_log_notification({
         action         => $action,
@@ -263,8 +278,9 @@ sub _build_vars {
     my $nombre  = $_d->( join( ' ', grep { $_ } $patron->firstname, $patron->surname ) );
     my $cardnum = $_d->( $patron->cardnumber     // '' );
 
-    my $date_due_str = '';
-    my $retraso_str  = '';
+    my $date_due_str   = '';
+    my $retraso_str    = '';
+    my $retraso_email  = '';
 
     if ( $action ne 'checkin' ) {
         my $date_due = try { $checkout->date_due } catch { undef };
@@ -287,17 +303,31 @@ sub _build_vars {
     else {
         # checkin: calcular mora si la devolución fue después del vencimiento
         try {
-            my $date_due = $checkout->date_due;
+            my $date_due   = $checkout->date_due;
+            my $returndate = $checkout->returndate;
+            open(my $_dbg2, '>>', '/tmp/sms_debug.log');
+            print $_dbg2 "[MORA] date_due=" . ($date_due // 'undef') . " returndate=" . ($returndate // 'undef') . "\n";
+            close $_dbg2;
             if ($date_due) {
                 my $dt_due = ref($date_due) && ref($date_due) ne 'SCALAR'
                     ? $date_due
                     : dt_from_string("$date_due");
-                my $dt_return = try { dt_from_string( $checkout->returndate ) } catch { dt_from_string('now') };
+                my $dt_return = try { dt_from_string( $returndate ) } catch { dt_from_string('now') };
                 $dt_return //= dt_from_string('now');
-                my $dias = int( $dt_return->subtract_datetime($dt_due)->in_units('days') );
-                $retraso_str = "| MORA: $dias dia" . ( $dias == 1 ? '' : 's' ) if $dias > 0;
+                # Comparar solo fechas (truncar hora) para evitar falsos 0
+                my $due_ymd    = $dt_due->clone->truncate(to => 'day');
+                my $return_ymd = $dt_return->clone->truncate(to => 'day');
+                my $dias = int( $return_ymd->subtract_datetime($due_ymd)->in_units('days') );
+                open(my $_dbg3, '>>', '/tmp/sms_debug.log');
+                print $_dbg3 "[MORA] due_ymd=$due_ymd return_ymd=$return_ymd dias=$dias\n";
+                close $_dbg3;
+                if ( $dias > 0 ) {
+                    my $dias_str = $dias . ' dia' . ( $dias == 1 ? '' : 's' );
+                    $retraso_str   = "| MORA: $dias_str";
+                    $retraso_email = "\n  *** DEVUELTO CON RETRASO: $dias_str ***\n";
+                }
             }
-        };
+        } catch { open(my $_dbg4, '>>', '/tmp/sms_debug.log'); print $_dbg4 "[MORA] error: $_\n"; close $_dbg4; };;
     }
 
     my $branch_name = '';
@@ -320,6 +350,7 @@ sub _build_vars {
         '<<biblio.author>>'        => $author,
         '<<checkout.date_due>>'    => $date_due_str,
         '<<retraso>>'              => $retraso_str,
+        '<<retraso_email>>'        => $retraso_email,
         '<<branches.branchname>>'  => $branch_name,
         '<<nombre_completo>>'      => $nombre,
         '<<opac_url>>'             => C4::Context->preference('OPACBaseURL') // '',
@@ -561,8 +592,7 @@ Tu devolución ha sido registrada.
   Código:    <<items.barcode>>
   Signatura: <<items.itemcallnumber>>
   Sede:      <<branches.branchname>>
-
-Gracias por devolver el material.
+<<retraso_email>>
 Catálogo en línea: $opac
 
 $library
