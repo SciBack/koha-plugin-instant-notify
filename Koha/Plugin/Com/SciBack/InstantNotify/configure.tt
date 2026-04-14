@@ -8,12 +8,16 @@
 <style>
   .sn-section        { background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px; padding:20px; margin-bottom:20px; }
   .sn-section h3     { margin-top:0; color:#2c3e50; font-size:1.1rem; }
+  .sn-section-sms    { background:#f0f7ff; border:1px solid #b8d4f0; }
+  .sn-section-sms h3 { color:#1a4a7a; }
   .sn-status-ok      { color:#28a745; font-weight:600; }
   .sn-status-disabled{ color:#dc3545; font-weight:600; }
   .sn-log-table      { font-size:.85rem; }
   .sn-badge-sent     { background:#28a745; color:#fff; padding:2px 8px; border-radius:10px; }
   .sn-badge-fallback { background:#ffc107; color:#333; padding:2px 8px; border-radius:10px; }
   .sn-badge-failed   { background:#dc3545; color:#fff; padding:2px 8px; border-radius:10px; }
+  .sn-badge-sms      { background:#17a2b8; color:#fff; padding:2px 6px; border-radius:10px; font-size:.75rem; }
+  .sn-badge-email    { background:#6c757d; color:#fff; padding:2px 6px; border-radius:10px; font-size:.75rem; }
   .tab-content       { padding:20px 0 0; }
   textarea.body-tpl  { font-family:monospace; font-size:.85rem; }
 </style>
@@ -73,16 +77,15 @@
             </div>
           </div>
 
-          <!-- SMTP -->
+          <!-- Email -->
           <div class="sn-section">
-            <h3>Configuración de envío</h3>
+            <h3>📧 Configuración de email</h3>
             <div class="row">
               <div class="col-sm-6">
                 <div class="form-group">
                   <label for="from_address">Dirección remitente (From)</label>
                   <input type="email" class="form-control" id="from_address" name="from_address"
-                    value="[% from_address | html %]"
-                    placeholder="crai@upeu.edu.pe">
+                    value="[% from_address | html %]" placeholder="crai@upeu.edu.pe">
                   <small class="form-text text-muted">
                     Usa el servidor SMTP configurado en <a href="/cgi-bin/koha/admin/smtp_servers.pl" target="_blank">Koha → Admin → Servidores SMTP</a>.
                   </small>
@@ -110,11 +113,71 @@
             </div>
           </div>
 
-          <!-- Templates -->
-          <div class="sn-section">
-            <h3>Templates de notificación</h3>
+          <!-- SMS -->
+          <div class="sn-section sn-section-sms">
+            <h3>📱 Configuración de SMS</h3>
             <p class="text-muted" style="font-size:.9em">
-              Variables disponibles:
+              Envía SMS instantáneo vía <strong>sms-hub</strong> cuando el patron tiene <code>smsalertnumber</code> registrado.
+            </p>
+            <div class="row mb-3">
+              <div class="col-sm-6">
+                <div class="form-group">
+                  <label for="sms_hub_url">URL del sms-hub</label>
+                  <input type="text" class="form-control" id="sms_hub_url" name="sms_hub_url"
+                    value="[% sms_hub_url | html %]" placeholder="http://192.168.15.231:8000">
+                </div>
+              </div>
+              <div class="col-sm-6">
+                <div class="form-group">
+                  <label for="sms_hub_apikey">API Key (cliente Koha)</label>
+                  <input type="text" class="form-control" id="sms_hub_apikey" name="sms_hub_apikey"
+                    value="[% sms_hub_apikey | html %]" placeholder="97bffb40...">
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="font-weight-bold">Acciones SMS habilitadas</label><br>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="enable_sms_checkout" name="enable_sms_checkout" value="1"
+                  [% IF enable_sms_checkout %]checked[% END %]>
+                <label class="form-check-label" for="enable_sms_checkout">Préstamo</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="enable_sms_checkin" name="enable_sms_checkin" value="1"
+                  [% IF enable_sms_checkin %]checked[% END %]>
+                <label class="form-check-label" for="enable_sms_checkin">Devolución</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="enable_sms_renewal" name="enable_sms_renewal" value="1"
+                  [% IF enable_sms_renewal %]checked[% END %]>
+                <label class="form-check-label" for="enable_sms_renewal">Renovación</label>
+              </div>
+            </div>
+            <p class="text-muted" style="font-size:.85em">
+              Variables disponibles en SMS: <code>&lt;&lt;biblio.title&gt;&gt;</code> <code>&lt;&lt;checkout.date_due&gt;&gt;</code>
+              <code>&lt;&lt;nombre_completo&gt;&gt;</code> <code>&lt;&lt;borrowers.cardnumber&gt;&gt;</code>
+              <code>&lt;&lt;library_name&gt;&gt;</code> — máximo 160 caracteres.
+            </p>
+            <div class="row">
+              [% FOR action IN ['checkout', 'checkin', 'renewal'] %]
+                [% SET sms_val = action == 'checkout' ? sms_checkout : (action == 'checkin' ? sms_checkin : sms_renewal) %]
+                [% SET label   = action == 'checkout' ? 'Préstamo' : (action == 'checkin' ? 'Devolución' : 'Renovación') %]
+                <div class="col-sm-4">
+                  <div class="form-group">
+                    <label>SMS — [% label %]</label>
+                    <textarea class="form-control body-tpl" name="sms_[% action %]"
+                      rows="3" maxlength="160">[% sms_val | html %]</textarea>
+                  </div>
+                </div>
+              [% END %]
+            </div>
+          </div>
+
+          <!-- Templates de email -->
+          <div class="sn-section">
+            <h3>Templates de email</h3>
+            <p class="text-muted" style="font-size:.9em">
+              Variables:
               <code>&lt;&lt;nombre_completo&gt;&gt;</code>
               <code>&lt;&lt;borrowers.firstname&gt;&gt;</code>
               <code>&lt;&lt;borrowers.cardnumber&gt;&gt;</code>
@@ -174,6 +237,7 @@
             <thead>
               <tr>
                 <th>Fecha/Hora</th>
+                <th>Canal</th>
                 <th>Acción</th>
                 <th>Patron</th>
                 <th>Destinatario</th>
@@ -184,6 +248,13 @@
               [% FOR entry IN recent_log %]
               <tr>
                 <td>[% entry.sent_at %]</td>
+                <td>
+                  [% IF entry.channel == 'sms' %]
+                    <span class="sn-badge-sms">SMS</span>
+                  [% ELSE %]
+                    <span class="sn-badge-email">email</span>
+                  [% END %]
+                </td>
                 <td>[% entry.action %]</td>
                 <td>[% entry.borrowernumber %]</td>
                 <td>[% entry.to_address | html %]</td>
@@ -204,13 +275,13 @@
         [% END %]
 
       </main>
-    </div><!-- /.col-sm-10 -->
+    </div>
 
     <div class="col-sm-2 col-sm-pull-10">
       [% INCLUDE 'sidebar.inc' %]
     </div>
-  </div><!-- /.row -->
-</div><!-- /.main -->
+  </div>
+</div>
 
 [% MACRO jsinclude BLOCK %]
 [% Asset.js("js/plugins.js") | $raw %]
