@@ -206,6 +206,9 @@ sub _send_sms {
         $message =~ s/\Q$var\E/$val/g;
     }
 
+    # Transliterar a ASCII — OpenVox VS-GWP1600 descarta SMS con caracteres UCS-2
+    $message = _ascii_sms($message);
+
     # Truncar a 160 caracteres
     $message = substr($message, 0, 160) if length($message) > 160;
 
@@ -599,6 +602,30 @@ sub _default_sms {
 sub _is_html {
     my ( $self, $body ) = @_;
     return $body =~ /<html|<body|<p |<div|<table/i ? 1 : 0;
+}
+
+sub _ascii_sms {
+    my ($text) = @_;
+    # Transliterar caracteres latinos con tilde/acento a ASCII equivalente
+    # El OpenVox VS-GWP1600 no entrega SMS con encoding UCS-2
+    my %map = (
+        'á' => 'a', 'à' => 'a', 'â' => 'a', 'ä' => 'a', 'ã' => 'a',
+        'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
+        'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i',
+        'ó' => 'o', 'ò' => 'o', 'ô' => 'o', 'ö' => 'o', 'õ' => 'o',
+        'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u',
+        'ñ' => 'n', 'ç' => 'c',
+        'Á' => 'A', 'À' => 'A', 'Â' => 'A', 'Ä' => 'A', 'Ã' => 'A',
+        'É' => 'E', 'È' => 'E', 'Ê' => 'E', 'Ë' => 'E',
+        'Í' => 'I', 'Ì' => 'I', 'Î' => 'I', 'Ï' => 'I',
+        'Ó' => 'O', 'Ò' => 'O', 'Ô' => 'O', 'Ö' => 'O', 'Õ' => 'O',
+        'Ú' => 'U', 'Ù' => 'U', 'Û' => 'U', 'Ü' => 'U',
+        'Ñ' => 'N', 'Ç' => 'C',
+        '¿' => '', '¡' => '',
+    );
+    utf8::decode($text) unless utf8::is_utf8($text);
+    $text =~ s/([áàâäãéèêëíìîïóòôöõúùûüñçÁÀÂÄÃÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇ¿¡])/exists $map{$1} ? $map{$1} : $1/ge;
+    return $text;
 }
 
 1;
