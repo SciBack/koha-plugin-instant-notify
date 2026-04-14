@@ -8,6 +8,7 @@ package Koha::Plugin::Com::SciBack::InstantNotify;
 # License: GPL-3.0-or-later
 
 use Modern::Perl;
+use utf8;
 use base qw(Koha::Plugins::Base);
 
 use Try::Tiny;
@@ -97,12 +98,20 @@ sub _send_notification {
     if ( $action ne 'checkin' ) {
         my $date_due = try { $checkout->date_due } catch { undef };
         if ($date_due) {
-            $date_due_str = output_pref({
-                dt         => $date_due,
-                dateformat => 'metric',
-                timeformat => '24hr',
-                dateonly   => 0,
-            });
+            try {
+                # date_due puede ser string o DateTime según el contexto
+                my $dt = ref($date_due) && ref($date_due) ne 'SCALAR'
+                    ? $date_due
+                    : dt_from_string("$date_due");
+                $date_due_str = output_pref({
+                    dt         => $dt,
+                    dateformat => 'metric',
+                    timeformat => '24hr',
+                    dateonly   => 0,
+                });
+            } catch {
+                $date_due_str = "$date_due";  # fallback: usar string tal cual
+            };
         }
     }
 
@@ -160,6 +169,10 @@ sub _send_notification {
     try {
         local $SIG{ALRM} = sub { die "timeout\n" };
         alarm( $self->retrieve_data('smtp_timeout') // 8 );
+
+        # Forzar UTF-8 en strings para evitar doble-encoding
+        utf8::decode($subject) unless utf8::is_utf8($subject);
+        utf8::decode($body)    unless utf8::is_utf8($body);
 
         my $email = Koha::Email->create({
             to      => $to_email,
