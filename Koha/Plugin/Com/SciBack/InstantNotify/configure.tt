@@ -141,7 +141,7 @@
             <p class="text-muted" style="font-size:.85em">
               Variables disponibles en SMS: <code>&lt;&lt;biblio.title&gt;&gt;</code> <code>&lt;&lt;checkout.date_due&gt;&gt;</code>
               <code>&lt;&lt;nombre_completo&gt;&gt;</code> <code>&lt;&lt;borrowers.cardnumber&gt;&gt;</code>
-              <code>&lt;&lt;library_name&gt;&gt;</code> — máximo 160 caracteres.
+              <code>&lt;&lt;library_name&gt;&gt;</code> <code>&lt;&lt;retraso&gt;&gt;</code> (solo devolución: "| MORA: N dias" si hay mora, vacío si no) — máximo 160 caracteres.
             </p>
             <div class="row">
               [% FOR action IN ['checkout', 'checkin', 'renewal'] %]

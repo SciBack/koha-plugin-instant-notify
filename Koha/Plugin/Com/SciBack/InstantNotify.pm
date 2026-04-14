@@ -264,6 +264,8 @@ sub _build_vars {
     my $cardnum = $_d->( $patron->cardnumber     // '' );
 
     my $date_due_str = '';
+    my $retraso_str  = '';
+
     if ( $action ne 'checkin' ) {
         my $date_due = try { $checkout->date_due } catch { undef };
         if ($date_due) {
@@ -281,6 +283,21 @@ sub _build_vars {
                 $date_due_str = "$date_due";
             };
         }
+    }
+    else {
+        # checkin: calcular mora si la devolución fue después del vencimiento
+        try {
+            my $date_due = $checkout->date_due;
+            if ($date_due) {
+                my $dt_due = ref($date_due) && ref($date_due) ne 'SCALAR'
+                    ? $date_due
+                    : dt_from_string("$date_due");
+                my $dt_return = try { dt_from_string( $checkout->returndate ) } catch { dt_from_string('now') };
+                $dt_return //= dt_from_string('now');
+                my $dias = int( $dt_return->subtract_datetime($dt_due)->in_units('days') );
+                $retraso_str = "| MORA: $dias dia" . ( $dias == 1 ? '' : 's' ) if $dias > 0;
+            }
+        };
     }
 
     my $branch_name = '';
@@ -302,6 +319,7 @@ sub _build_vars {
         '<<biblio.title>>'         => $title,
         '<<biblio.author>>'        => $author,
         '<<checkout.date_due>>'    => $date_due_str,
+        '<<retraso>>'              => $retraso_str,
         '<<branches.branchname>>'  => $branch_name,
         '<<nombre_completo>>'      => $nombre,
         '<<opac_url>>'             => C4::Context->preference('OPACBaseURL') // '',
@@ -577,7 +595,7 @@ sub _default_sms {
     my ( $self, $action ) = @_;
     my %sms = (
         checkout => 'Prestamo: <<biblio.title>> - Vence: <<checkout.date_due>> | <<library_name>>',
-        checkin  => 'Devolucion registrada: <<biblio.title>> | <<library_name>>',
+        checkin  => 'Devolucion: <<biblio.title>> <<retraso>>| <<library_name>>',
         renewal  => 'Renovacion: <<biblio.title>> - Nueva fecha: <<checkout.date_due>> | <<library_name>>',
     );
     return $sms{$action} // 'Notificacion de biblioteca';
