@@ -64,8 +64,8 @@ sub after_circ_action {
         checkout => $checkout,
     };
 
-    # Email — si tiene dirección registrada
-    $self->_send_email($data) if $patron->email;
+    # Email — si tiene al menos una dirección registrada (email o emailpro)
+    $self->_send_email($data) if $patron->email || $patron->emailpro;
 
     # SMS — si tiene número registrado
     $self->_send_sms($data) if $patron->smsalertnumber;
@@ -84,7 +84,12 @@ sub _send_email {
     my $biblio   = $data->{biblio};
     my $checkout = $data->{checkout};
 
-    my $to_email = $patron->email;
+    # Recopilar todos los emails del patron (email + emailpro si existen)
+    my @to_emails = grep { $_ && $_ =~ /\@/ }
+                    ( $patron->email // '', $patron->emailpro // '' );
+    my %seen;
+    @to_emails = grep { !$seen{$_}++ } @to_emails;  # deduplicar
+    return unless @to_emails;
 
     my $subject_tpl = $self->retrieve_data("subject_$action")
         // $self->_default_subject($action);
@@ -105,68 +110,71 @@ sub _send_email {
         // C4::Context->preference('KohaAdminEmailAddress')
         // '';
 
-    return unless $from && $to_email;
+    return unless $from;
 
-    my $sent = 0;
-    my $error_msg = '';
+    utf8::decode($subject) unless utf8::is_utf8($subject);
+    utf8::decode($body)    unless utf8::is_utf8($body);
 
-    try {
-        local $SIG{ALRM} = sub { die "timeout\n" };
-        alarm( $self->retrieve_data('smtp_timeout') // 8 );
+    # Enviar a cada dirección registrada (email + emailpro)
+    for my $to_email (@to_emails) {
+        my $sent = 0;
+        my $error_msg = '';
 
-        utf8::decode($subject) unless utf8::is_utf8($subject);
-        utf8::decode($body)    unless utf8::is_utf8($body);
+        try {
+            local $SIG{ALRM} = sub { die "timeout\n" };
+            alarm( $self->retrieve_data('smtp_timeout') // 8 );
 
-        my $email = Koha::Email->create({
-            to      => $to_email,
-            from    => $from,
-            subject => $subject,
-            ( $self->_is_html($body)
-                ? ( html_body => $body )
-                : ( text_body => $body )
-            ),
-        });
+            my $email = Koha::Email->create({
+                to      => $to_email,
+                from    => $from,
+                subject => $subject,
+                ( $self->_is_html($body)
+                    ? ( html_body => $body )
+                    : ( text_body => $body )
+                ),
+            });
 
-        my $smtp = Koha::SMTP::Servers->get_default;
-        $email->send_or_die({ transport => $smtp->transport });
-        alarm(0);
-        $sent = 1;
-    }
-    catch {
-        alarm(0);
-        $error_msg = "$_";
-        warn "[SciBack::InstantNotify] Error SMTP para $to_email ($action): $error_msg";
-
-        if ( $self->retrieve_data('fallback_to_queue') // 1 ) {
-            try {
-                require C4::Letters;
-                C4::Letters::EnqueueLetter({
-                    letter => {
-                        title        => $subject,
-                        content      => $body,
-                        content_type => $self->_is_html($body) ? 'text/html' : 'text/plain',
-                    },
-                    borrowernumber         => $patron->borrowernumber,
-                    message_transport_type => 'email',
-                    to_address             => $to_email,
-                    from_address           => $from,
-                });
-                $sent = 2;
-            };
+            my $smtp = Koha::SMTP::Servers->get_default;
+            $email->send_or_die({ transport => $smtp->transport });
+            alarm(0);
+            $sent = 1;
         }
-    };
+        catch {
+            alarm(0);
+            $error_msg = "$_";
+            warn "[SciBack::InstantNotify] Error SMTP para $to_email ($action): $error_msg";
 
-    $self->_log_notification({
-        action         => $action,
-        channel        => 'email',
-        borrowernumber => $patron->borrowernumber,
-        itemnumber     => $item->itemnumber,
-        to_address     => $to_email,
-        status         => $sent == 1 ? 'sent' : ( $sent == 2 ? 'queued_fallback' : 'failed' ),
-        error_message  => $error_msg,
-    });
+            if ( $self->retrieve_data('fallback_to_queue') // 1 ) {
+                try {
+                    require C4::Letters;
+                    C4::Letters::EnqueueLetter({
+                        letter => {
+                            title        => $subject,
+                            content      => $body,
+                            content_type => $self->_is_html($body) ? 'text/html' : 'text/plain',
+                        },
+                        borrowernumber         => $patron->borrowernumber,
+                        message_transport_type => 'email',
+                        to_address             => $to_email,
+                        from_address           => $from,
+                    });
+                    $sent = 2;
+                };
+            }
+        };
 
-    return $sent;
+        $self->_log_notification({
+            action         => $action,
+            channel        => 'email',
+            borrowernumber => $patron->borrowernumber,
+            itemnumber     => $item->itemnumber,
+            to_address     => $to_email,
+            status         => $sent == 1 ? 'sent' : ( $sent == 2 ? 'queued_fallback' : 'failed' ),
+            error_message  => $error_msg,
+        });
+    }
+
+    return 1;
 }
 
 # ─── Envío de SMS ──────────────────────────────────────────────────────────────
