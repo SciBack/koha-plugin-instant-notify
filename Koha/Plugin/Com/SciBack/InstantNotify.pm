@@ -95,6 +95,8 @@ sub _send_email {
         // $self->_default_subject($action);
     my $body_tpl = $self->retrieve_data("body_$action")
         // $self->_default_body($action);
+    utf8::decode($subject_tpl) unless utf8::is_utf8($subject_tpl);
+    utf8::decode($body_tpl)    unless utf8::is_utf8($body_tpl);
 
     my %vars = $self->_build_vars($data);
 
@@ -194,6 +196,7 @@ sub _send_sms {
     # Construir mensaje desde template
     my $tpl = $self->retrieve_data("sms_$action")
         // $self->_default_sms($action);
+    utf8::decode($tpl) unless utf8::is_utf8($tpl);  # BD → Unicode
 
     my %vars = $self->_build_vars($data);
     my $message = $tpl;
@@ -248,12 +251,17 @@ sub _build_vars {
     my $biblio   = $data->{biblio};
     my $checkout = $data->{checkout};
 
-    my $title   = $biblio ? $biblio->title  : 'Material';
-    my $author  = $biblio ? $biblio->author : '';
-    my $barcode = $item->barcode           // '';
-    my $callnum = $item->itemcallnumber    // '';
-    my $nombre  = join( ' ', grep { $_ } $patron->firstname, $patron->surname );
-    my $cardnum = $patron->cardnumber      // '';
+    # Asegurar que los strings de la BD tengan el flag UTF-8 interno de Perl.
+    # Sin esto, al mezclar con strings Unicode del plugin (use utf8), Perl
+    # interpreta los bytes raw como Latin-1 y corrompe los acentos.
+    my $_d = sub { my $s = shift // return ''; utf8::decode($s) unless utf8::is_utf8($s); $s };
+
+    my $title   = $_d->( $biblio ? $biblio->title  : 'Material' );
+    my $author  = $_d->( $biblio ? $biblio->author : ''         );
+    my $barcode = $_d->( $item->barcode          // '' );
+    my $callnum = $_d->( $item->itemcallnumber   // '' );
+    my $nombre  = $_d->( join( ' ', grep { $_ } $patron->firstname, $patron->surname ) );
+    my $cardnum = $_d->( $patron->cardnumber     // '' );
 
     my $date_due_str = '';
     if ( $action ne 'checkin' ) {
