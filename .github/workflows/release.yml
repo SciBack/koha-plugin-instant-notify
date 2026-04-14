@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build .kpz
+        run: |
+          VERSION=$(grep "our \$VERSION" Koha/Plugin/Com/SciBack/InstantNotify.pm | grep -oP '[\d.]+')
+          KPZ="SciBack-InstantNotify-${VERSION}.kpz"
+          zip -r "$KPZ" Koha/
+          echo "KPZ_FILE=$KPZ" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "SciBack Instant Notify v${{ env.VERSION }}"
+          body: |
+            ## SciBack Instant Notify v${{ env.VERSION }}
+
+            Plugin Koha para notificaciones instantáneas de circulación (checkout, checkin, renovación).
+
+            ### Instalación
+            1. Descargar `${{ env.KPZ_FILE }}`
+            2. Koha Staff → Administration → Plugins → Upload plugin
+            3. Activar y configurar
+          files: ${{ env.KPZ_FILE }}
+          draft: false

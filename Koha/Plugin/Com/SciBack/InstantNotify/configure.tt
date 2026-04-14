@@ -1,0 +1,218 @@
+[% USE raw %]
+[% USE Asset %]
+[% PROCESS 'i18n.inc' %]
+[% SET footerjs = 1 %]
+[% INCLUDE 'doc-head-open.inc' %]
+<title>SciBack Instant Notify — Configuración</title>
+[% INCLUDE 'doc-head-close.inc' %]
+<style>
+  .sn-section        { background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px; padding:20px; margin-bottom:20px; }
+  .sn-section h3     { margin-top:0; color:#2c3e50; font-size:1.1rem; }
+  .sn-status-ok      { color:#28a745; font-weight:600; }
+  .sn-status-disabled{ color:#dc3545; font-weight:600; }
+  .sn-log-table      { font-size:.85rem; }
+  .sn-badge-sent     { background:#28a745; color:#fff; padding:2px 8px; border-radius:10px; }
+  .sn-badge-fallback { background:#ffc107; color:#333; padding:2px 8px; border-radius:10px; }
+  .sn-badge-failed   { background:#dc3545; color:#fff; padding:2px 8px; border-radius:10px; }
+  .tab-content       { padding:20px 0 0; }
+  textarea.body-tpl  { font-family:monospace; font-size:.85rem; }
+</style>
+</head>
+<body>
+[% WRAPPER 'header.inc' %]
+  [% INCLUDE 'cat-search.inc' %]
+[% END %]
+
+[% WRAPPER 'sub-header.inc' %]
+  [% WRAPPER 'breadcrumbs.inc' %]
+    [% CRUMB( 'Plugins', '/cgi-bin/koha/plugins/plugins-home.pl' ) %]
+    [% CRUMB( 'SciBack Instant Notify' ) %]
+  [% END %]
+[% END %]
+
+<div class="main container-fluid">
+  <div class="row">
+    <div class="col-sm-10 col-sm-push-2">
+      <main>
+
+        <h1>
+          SciBack Instant Notify
+          <small class="text-muted" style="font-size:.6em">v[% plugin_version %]</small>
+        </h1>
+        <p class="text-muted">Notificaciones instantáneas de circulación — sin depender del cron de 1 minuto.</p>
+
+        [% IF enable_checkout || enable_checkin || enable_renewal %]
+          <p class="sn-status-ok">● Plugin activo</p>
+        [% ELSE %]
+          <p class="sn-status-disabled">● Plugin desactivado (ninguna acción habilitada)</p>
+        [% END %]
+
+        <form method="post" action="/cgi-bin/koha/plugins/run.pl">
+          [% INCLUDE 'csrf-token.inc' %]
+          <input type="hidden" name="class"  value="[% CLASS %]" />
+          <input type="hidden" name="method" value="configure" />
+          <input type="hidden" name="save"   value="1" />
+
+          <!-- Acciones habilitadas -->
+          <div class="sn-section">
+            <h3>Acciones habilitadas</h3>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" id="enable_checkout" name="enable_checkout" value="1"
+                [% IF enable_checkout %]checked[% END %]>
+              <label class="form-check-label" for="enable_checkout">Préstamo (checkout)</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" id="enable_checkin" name="enable_checkin" value="1"
+                [% IF enable_checkin %]checked[% END %]>
+              <label class="form-check-label" for="enable_checkin">Devolución (checkin)</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" id="enable_renewal" name="enable_renewal" value="1"
+                [% IF enable_renewal %]checked[% END %]>
+              <label class="form-check-label" for="enable_renewal">Renovación (renewal)</label>
+            </div>
+          </div>
+
+          <!-- SMTP -->
+          <div class="sn-section">
+            <h3>Configuración de envío</h3>
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="form-group">
+                  <label for="from_address">Dirección remitente (From)</label>
+                  <input type="email" class="form-control" id="from_address" name="from_address"
+                    value="[% from_address | html %]"
+                    placeholder="crai@upeu.edu.pe">
+                  <small class="form-text text-muted">
+                    Usa el servidor SMTP configurado en <a href="/cgi-bin/koha/admin/smtp_servers.pl" target="_blank">Koha → Admin → Servidores SMTP</a>.
+                  </small>
+                </div>
+              </div>
+              <div class="col-sm-3">
+                <div class="form-group">
+                  <label for="smtp_timeout">Timeout SMTP (segundos)</label>
+                  <input type="number" class="form-control" id="smtp_timeout" name="smtp_timeout"
+                    value="[% smtp_timeout %]" min="3" max="30">
+                </div>
+              </div>
+              <div class="col-sm-3">
+                <div class="form-group">
+                  <label>&nbsp;</label><br>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="fallback_to_queue" name="fallback_to_queue" value="1"
+                      [% IF fallback_to_queue %]checked[% END %]>
+                    <label class="form-check-label" for="fallback_to_queue">
+                      Fallback a cola si SMTP falla
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Templates -->
+          <div class="sn-section">
+            <h3>Templates de notificación</h3>
+            <p class="text-muted" style="font-size:.9em">
+              Variables disponibles:
+              <code>&lt;&lt;nombre_completo&gt;&gt;</code>
+              <code>&lt;&lt;borrowers.firstname&gt;&gt;</code>
+              <code>&lt;&lt;borrowers.cardnumber&gt;&gt;</code>
+              <code>&lt;&lt;biblio.title&gt;&gt;</code>
+              <code>&lt;&lt;biblio.author&gt;&gt;</code>
+              <code>&lt;&lt;items.barcode&gt;&gt;</code>
+              <code>&lt;&lt;checkout.date_due&gt;&gt;</code>
+              <code>&lt;&lt;branches.branchname&gt;&gt;</code>
+              <code>&lt;&lt;library_name&gt;&gt;</code>
+              <code>&lt;&lt;opac_url&gt;&gt;</code>
+            </p>
+
+            <ul class="nav nav-tabs" role="tablist">
+              <li class="nav-item">
+                <a class="nav-link active" data-toggle="tab" href="#tab-checkout">Préstamo</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-checkin">Devolución</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-renewal">Renovación</a>
+              </li>
+            </ul>
+            <div class="tab-content">
+              [% FOR action IN ['checkout', 'checkin', 'renewal'] %]
+                [% SET tab_active = (action == 'checkout') ? 'show active' : '' %]
+                [% SET subj_val   = action == 'checkout' ? subject_checkout : (action == 'checkin' ? subject_checkin : subject_renewal) %]
+                [% SET body_val   = action == 'checkout' ? body_checkout    : (action == 'checkin' ? body_checkin    : body_renewal)    %]
+                <div class="tab-pane fade [% tab_active %]" id="tab-[% action %]">
+                  <div class="form-group mt-3">
+                    <label>Asunto</label>
+                    <input type="text" class="form-control" name="subject_[% action %]"
+                      value="[% subj_val | html %]">
+                  </div>
+                  <div class="form-group">
+                    <label>Cuerpo del mensaje</label>
+                    <textarea class="form-control body-tpl" name="body_[% action %]"
+                      rows="12">[% body_val | html %]</textarea>
+                    <small class="form-text text-muted">
+                      Texto plano o HTML. Si incluye etiquetas &lt;html&gt;, &lt;body&gt; o &lt;p&gt; se enviará como HTML.
+                    </small>
+                  </div>
+                </div>
+              [% END %]
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Guardar configuración</button>
+          <a href="/cgi-bin/koha/plugins/plugins-home.pl" class="btn btn-default">Cancelar</a>
+        </form>
+
+        <!-- Log reciente -->
+        [% IF recent_log.size %]
+        <div class="sn-section mt-4">
+          <h3>Últimas notificaciones enviadas</h3>
+          <table class="table table-bordered table-sm sn-log-table">
+            <thead>
+              <tr>
+                <th>Fecha/Hora</th>
+                <th>Acción</th>
+                <th>Patron</th>
+                <th>Destinatario</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              [% FOR entry IN recent_log %]
+              <tr>
+                <td>[% entry.sent_at %]</td>
+                <td>[% entry.action %]</td>
+                <td>[% entry.borrowernumber %]</td>
+                <td>[% entry.to_address | html %]</td>
+                <td>
+                  [% IF entry.status == 'sent' %]
+                    <span class="sn-badge-sent">enviado</span>
+                  [% ELSIF entry.status == 'queued_fallback' %]
+                    <span class="sn-badge-fallback">en cola (fallback)</span>
+                  [% ELSE %]
+                    <span class="sn-badge-failed">fallido</span>
+                  [% END %]
+                </td>
+              </tr>
+              [% END %]
+            </tbody>
+          </table>
+        </div>
+        [% END %]
+
+      </main>
+    </div><!-- /.col-sm-10 -->
+
+    <div class="col-sm-2 col-sm-pull-10">
+      [% INCLUDE 'sidebar.inc' %]
+    </div>
+  </div><!-- /.row -->
+</div><!-- /.main -->
+
+[% MACRO jsinclude BLOCK %]
+[% Asset.js("js/plugins.js") | $raw %]
+[% END %]
+[% INCLUDE 'intranet-bottom.inc' %]
